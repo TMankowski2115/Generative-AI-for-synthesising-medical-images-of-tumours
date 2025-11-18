@@ -1,110 +1,112 @@
 # CT Lung Mask → Image GAN (U-Net + SSIM)
 
-Ten projekt trenuje model typu **pix2pix (U-Net Generator + PatchGAN Discriminator)** do generowania slajsów CT płuc na podstawie masek (`lung_mask` / `combined_mask`).  
-Dodatkowo do funkcji straty używany jest **SSIM**, aby poprawić zachowanie struktury naczyń i ogólną jakość obrazu.
+This project trains a **pix2pix (U-Net Generator + PatchGAN Discriminator)** model to generate CT lung slices based on masks (`lung_mask` / `combined_mask`).  
+Additionally, **SSIM** is used in the loss function to improve preservation of vessel structures and overall image quality.
 
 ---
 
-## Struktura danych
+## 📁 Data Structure
 
-Wymagana struktura katalogów:
+Required directory structure:
+
 ```text
 dataset_lidc_masks/
   train/
     with_nodules/
-      ..._slice_....png          # obraz CT (wejście do D, target dla G)
-      ..._combined_mask_....npy  # maska płuc+guzków (wejście do G)
+      ..._slice_....png          # CT image (input to D, target for G)
+      ..._combined_mask_....npy  # lung+nodule mask (input to G)
     clean/
-      ..._slice_....png          # obraz CT bez guzków
-      ..._lung_mask_....npy      # maska płuc (bez guzków)
+      ..._slice_....png          # CT image without nodules
+      ..._lung_mask_....npy      # lung mask (without nodules)
   test/
     with_nodules/
       ...
     clean/
       ...
 	  
-Format nazw:
+	  
+Naming format:
 
-- obraz CT:  
+- CT image:  
   `LIDC-IDRI-XXXX_slice_YYYY.png`
-- maska płuc:  
+- lung mask:  
   `LIDC-IDRI-XXXX_lung_mask_YYYY.npy`
-- maska płuc + guzki:  
+- lung + nodule mask:  
   `LIDC-IDRI-XXXX_combined_mask_YYYY.npy`
 
 
-## Architektura sieci
+## Network Architecture
 
 ### Generator – U-Net
 
-Generator to 6-poziomowy **U-Net**, który konwertuje 1-kanałową maskę na 1-kanałowy obraz CT.
+The generator is a 6-level **U-Net** that converts a 1-channel mask into a 1-channel CT image.
 
-#### Enkoder (downsampling)
+#### Encoder (downsampling)
 
-- 6 bloków `Conv2d(k=4, s=2)` → redukcja rozdzielczości: 128 → 64 → 32 → … → 2
-- Kanały:  
+- 6 blocks of `Conv2d(k=4, s=2)` → resolution reduction: 128 → 64 → 32 → … → 2
+- Channels:  
   `1 → 64 → 128 → 256 → 512 → 512 → 512`
-- Normalizacja: `InstanceNorm2d` od poziomu 2  
-- Aktywacja: `LeakyReLU(0.2)`
-- Bottleneck: rozmiar `2×2`
+- Normalization: `InstanceNorm2d` from level 2  
+- Activation: `LeakyReLU(0.2)`
+- Bottleneck: size `2×2`
 
-#### Dekoder (upsampling)
+#### Decoder (upsampling)
 
-- 5 bloków `ConvTranspose2d(k=4, s=2)`
-- Skip-connections (`concat`) z odpowiadającymi warstwami enkodera
-- Dropout (0.5) w pierwszych 3 blokach
-- Ostatnia warstwa: `Tanh` (wyjście w zakresie `[-1, 1]`)
+- 5 blocks of `ConvTranspose2d(k=4, s=2)`
+- Skip-connections (`concat`) with corresponding encoder layers
+- Dropout (0.5) in the first 3 blocks
+- Final layer: `Tanh` (output range `[-1, 1]`)
 
-#### Zalety U-Net:
+#### U-Net Advantages:
 
-- **skip-connections zachowują drobne struktury**, np. naczynia płucne  
-- umożliwia odtwarzanie stabilnych detali z wczesnych warstw  
-- dużo lepiej radzi sobie z medycznymi obrazami niż zwykły autoencoder
+- **skip-connections preserve fine structures**, e.g., pulmonary vessels  
+- enables reconstruction of stable details from early layers  
+- handles medical images much better than a standard autoencoder
 
 ---
 
-### Dyskryminator – PatchGAN
+### Discriminator – PatchGAN
 
-PatchGAN nie zwraca jednej liczby, tylko **mapę wiarygodności** — każdy element mapy ocenia lokalny patch obrazu.
+PatchGAN doesn't return a single number, but rather a **plausibility map** — each element of the map evaluates a local patch of the image.
 
-Struktura:
+Structure:
 
 2 → 64 → 128 → 256 → 512 → 1
 
-Warunki:
+Conditions:
 
-- Wejściem jest konkatenacja `(mask, image)` → 2 kanały
-- Normalizacja: `InstanceNorm2d`
-- Aktywacja: `LeakyReLU(0.2)`
-- Ostateczna mapa jest mniejsza niż 128×128
+- Input is concatenation of `(mask, image)` → 2 channels
+- Normalization: `InstanceNorm2d`
+- Activation: `LeakyReLU(0.2)`
+- Final map is smaller than 128×128
 
-PatchGAN wymusza:
-- realistyczne tekstury CT,
-- ostrość krawędzi,
-- spójność lokalnych struktur.
+PatchGAN enforces:
+- realistic CT textures,
+- sharp edges,
+- coherence of local structures.
 
 ---
 
-## Funkcje straty
+## Loss Functions
 
-### Generator minimalizuje:
+### Generator minimizes:
 
 L_G = L_GAN + L_L1 + L_SSIM
 
 - **L_GAN** – BCEWithLogitsLoss(D(mask, fake), 1)
-- **L1 Loss** – duży współczynnik (100) wymusza zgodność pikselową
-- **SSIM Loss** – poprawia strukturę i kontrasty lokalne
+- **L1 Loss** – large coefficient (100) enforces pixel-wise agreement
+- **SSIM Loss** – improves structure and local contrasts
 
-### Dyskryminator minimalizuje:
+### Discriminator minimizes:
 
-L_D = 0.5 * ( BCE(real, 1) + BCE(fake, 0) )
+L_D = 0.5 × (BCE(real, 1) + BCE(fake, 0))
 
 
 ---
 
-## Hiperparametry
+## Hyperparameters
 
-| Parametr        | Wartość |
+| Parameter       | Value |
 |----------------|---------|
 | IMG_SIZE        | 128     |
 | BATCH_SIZE      | 64      |
@@ -113,22 +115,20 @@ L_D = 0.5 * ( BCE(real, 1) + BCE(fake, 0) )
 | BETAS           | (0.5, 0.999) |
 | LAMBDA_L1       | 100     |
 | LAMBDA_SSIM     | 5       |
-| LR decay        | od 100 epoki |
+| LR decay        | from epoch 100 |
 
 ---
 
-## Logowanie wyników
+## Results Logging
 
-Co epokę wypisywane są:
+Every epoch logs:
 - Loss_G
 - Loss_D
 - SSIM
 
-Co 5 epok:
-- wpis do `training_results_SSIM/training_log.txt`
+Every 5 epochs:
+- entry to `training_results_SSIM/training_log.txt`
 
-Co 10 epok:
-- zapis siatki przykładów (`epoch_XX.png`)
+Every 10 epochs:
+- save grid of examples (`epoch_XX.png`)
 - checkpoint: `checkpoint_epoch_XX.pth`
-
----
