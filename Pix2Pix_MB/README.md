@@ -5,11 +5,11 @@ Additionally, **SSIM** is used in the loss function to improve preservation of v
 
 ---
 
-## 📁 Data Structure
+## Data Structure
 
 Required directory structure:
 
-```text
+
 dataset_lidc_masks/
   train/
     with_nodules/
