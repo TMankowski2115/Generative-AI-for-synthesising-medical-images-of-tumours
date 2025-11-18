@@ -1,38 +1,38 @@
-# LIDC-IDRI → 2D lung slices dataset
+# LIDC-IDRI → 2D Lung Slice Dataset
 
-Skrypt buduje 2D-owy dataset slajsów płuc z guzkiem i bez guzka na podstawie oryginalnego LIDC-IDRI (DICOM + XML).
+This script builds a 2D slice-level lung dataset with and without nodules based on the original LIDC-IDRI dataset (DICOM + XML annotations).
 
-## Co robi skrypt?
+## What the script does
 
-- Szuka anotacji LIDC (`*.xml`) w katalogu `LIDC-IDRI/`.
-- Dla każdej serii CT:
-  - Wczytuje volumetrie CT (TYLKO modality = CT, z min. `MIN_SLICES`).
-  - Segmentuje płuca modelem **lungmask R231** → `lung_mask.png` (0=bg, 1=left, 2=right).
-  - (Stub) segmentuje płaty płuc → `lobes_mask.png` (0=bg, 1..5 = płaty).
-  - Parsuje anotacje guzków (poligony 2D) z XML + uśrednia cechy LIDC po radiologach.
-  - Filtruje slajsy:
-    - min. pokrycie płuc `MIN_LUNG_RATIO`,
-    - obecne oba płuca (1 i 2).
-  - Tworzy osobny sample dla:
-    - slajsu bez guzka (`*_neg`),
-    - każdego guzka na slajsie (`*_nod-XX`).
+- Scans all LIDC annotation files (`*.xml`) inside `LIDC-IDRI/`.
+- For each CT series:
+  - Loads the CT volume (ONLY modality = CT, with at least `MIN_SLICES` slices).
+  - Segments lungs using **lungmask R231** → `lung_mask.png` (0=bg, 1=left, 2=right).
+  - Segments lung lobes using a placeholder U-Net (stub) → `lobes_mask.png` (0=bg, 1..5 lobes).
+  - Parses nodule annotations (2D polygon contours) from XML and averages all radiologist characteristics.
+  - Filters slices based on:
+    - minimum lung coverage: `MIN_LUNG_RATIO`,
+    - both lungs present (labels 1 and 2 must appear).
+  - Creates separate samples for:
+    - slices without any nodule (`*_neg`),
+    - each individual nodule present on a slice (`*_nod-XX`).
 
-## Struktura wyjściowa
+## Output structure
 
-Tworzy się katalog:
+The script produces:
 
 ```text
 dataset_lidc_2d_seg/
   slices/<patient_id>/<series_uid>/
     z_0142_nod-01/
-      ct.png          # CT w oknie [-1000, 400], [0,1], zamaskowane do płuc ∪ guzek
-      ct_hu.npy       # surowy slajs CT w HU (float32)
-      lung_mask.png   # 0=bg, 1=left, 2=right
-      lobes_mask.png  # 0=bg, 1..5 płaty (stub)
-      nodule_mask.png # 0/1 – tylko ten KONKRETNY guzek
-      labels.json     # metadane guzka/slajsu (średnie cechy LIDC, położenie, wymiar itd.)
-      meta.json       # info techniczne (okno HU, semantyka masek, typ HU)
-      prompt.txt      # krótki opis guzka po polsku
+      ct.png          # CT windowed to [-1000,400], normalized to [0,1], masked to lungs ∪ nodule
+      ct_hu.npy       # raw HU slice, float32
+      lung_mask.png   # 0=bg, 1=left lung, 2=right lung
+      lobes_mask.png  # 0=bg, 1..5 lung lobes (stub)
+      nodule_mask.png # 0/1 – only this specific nodule
+      labels.json     # metadata (nodule geometry, LIDC averaged ratings, location, spacing, etc.)
+      meta.json       # technical info (HU window, mask semantics, HU dtype)
+      prompt.txt      # short natural-language clinical-style description (Polish)
     z_0087_neg/
       ct.png
       ct_hu.npy
@@ -40,8 +40,10 @@ dataset_lidc_2d_seg/
       lobes_mask.png
       labels.json     # has_nodule=false
       meta.json
+
   splits/
-    train.txt         # listy pacjentów wg splitu (po patient_id)
+    train.txt         # train patient IDs
     val.txt
     test.txt
-  patients.csv        # patient_id, split
+
+  patients.csv        # mapping: patient_id → split
