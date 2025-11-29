@@ -1,0 +1,9 @@
+2025-11-25 15:50:53,168 - INFO - [Real] LIDC negatywnych slajsów (do FID): 1000
+2025-11-25 15:50:53,169 - INFO - [Fake] syntetycznych slajsów (do FID): 64
+2025-11-25 15:50:53,170 - INFO - Samples Real: 1000
+2025-11-25 15:50:53,170 - INFO - Samples Fake: 64
+2025-11-25 15:50:56,680 - INFO - Device: cuda
+2025-11-25 15:51:07,403 - INFO - Starting PSNR/SSIM calculation (paired batches)...
+2025-11-25 15:51:14,877 - INFO - FID Score: 48.02669143676758
+2025-11-25 15:51:14,878 - INFO - Precision: 0.09375, Recall: 0.45000001788139343
+2025-11-25 15:51:14,878 - INFO - PSNR: 23.5771484375, SSIM: 0.7406646609306335
