@@ -61,17 +61,3 @@ Użyte metryki:
 | **SSIM** | **0.741** |
 
 ---
-
-## 5. Podsumowanie
-
-### Rekonstrukcje VAE
-VAE nauczył się bardzo dokładnie odwzorowywać zdrowe slajsy — jakość rekonstrukcji jest niemal identyczna z oryginałem.
-
-### Model dyfuzyjny
-Pierwszy trening daje sensowne syntetyczne CT, jednak metryki wskazują na możliwe usprawnienia:
-
-- **FID** stosunkowo wysoki → rozkład generacji odbiega od realnego.  
-- **Precision jest niskie** → lokalne artefakty pojawiają się w części próbek.  
-- **Recall ~45%** → model pokrywa sporą część rozkładu danych rzeczywistych.  
-
-Model generuje poprawne, realistyczne obrazy, ale wciąż wymaga dalszego dopracowania.
