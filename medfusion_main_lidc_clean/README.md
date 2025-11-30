@@ -25,8 +25,6 @@ Po treningu wygenerowano syntetyczne obrazy CT.
 
 ### Przykładowe wygenerowane obrazy
 
-*(miejsce na wstawiane obrazki)*
-
 <img width="1034" height="260" alt="sample_103" src="https://github.com/user-attachments/assets/6aa015b6-95c9-4ee8-b827-8ce9e5230b48" />
 
 ---
