@@ -98,11 +98,11 @@ Key features:
 - 1000-step DDPM noise schedule,
 - EMA weights for improved sampling stability.
 
-#Results:
+# Results:
 
 <img width="287" height="578" alt="sample" src="https://github.com/user-attachments/assets/d8f03708-bd6e-4b61-bfc6-3f32fb411f4d" />
 
-#Metrics:
+# Metrics:
 
 <img width="600" height="362" alt="metrics" src="https://github.com/user-attachments/assets/6935f276-ceff-4545-a522-d66cfd531198" />
 
