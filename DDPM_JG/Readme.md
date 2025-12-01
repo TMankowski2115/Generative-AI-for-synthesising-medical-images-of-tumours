@@ -68,7 +68,7 @@ This output represents the **predicted noise** that was added to the clean CT im
 In the DDPM framework, the UNet does **not generate CT images directly.  
 Instead, it learns to reconstruct the noise component, allowing the DDPM scheduler to iteratively denoise the sample during the reverse diffusion process.
 
-# Results:
+# Results at 46 epoch:
 <img width="522" height="550" alt="samples_ep046" src="https://github.com/user-attachments/assets/e6109c87-f222-406b-957f-4483adcd32b3" />
 
 ## Metrics:
