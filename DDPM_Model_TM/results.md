@@ -43,7 +43,7 @@ The model demonstrates precise control over nodule placement, size, and adherenc
 
 | 0mm (Attached to Wall) | 3mm (Near Wall) | Healthy Lung (Zero Vector) |
 | :---: | :---: | :---: |
-| ![Gen 0mm](media/mm.png) | ![Gen 5mm](media/5mm.png) | ![Generated Healthy Lung](media/healthy.png) |
+| ![Gen 0mm](media/0mm.png) | ![Gen 5mm](media/5mm.png) | ![Generated Healthy Lung](media/healthy.png) |
 | *Nodule correctly adheres to the pleura, demonstrating accurate control of the 0mm distance parameter*. | *Nodule is accurately separated from the pleura, demonstrating clear control over the intermediate distance*. | *Zero-vector input yields a healthy lung with correct texture and no mass*. |
 
 ---
