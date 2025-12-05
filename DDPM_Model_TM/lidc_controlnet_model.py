@@ -1,7 +1,36 @@
+# lidc_controlnet_model.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
+
+
+# ======================================================================
+#  SELF ATTENTION 
+# ======================================================================
+
+class SelfAttention(nn.Module):
+    def __init__(self, channels):
+        super(SelfAttention, self).__init__()
+        self.channels = channels
+        self.mha = nn.MultiheadAttention(channels, 4, batch_first=True)
+        self.ln = nn.LayerNorm([channels])
+        self.ff_self = nn.Sequential(
+            nn.LayerNorm([channels]),
+            nn.Linear(channels, channels),
+            nn.GELU(),
+            nn.Linear(channels, channels),
+        )
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        x = x.view(B, C, H * W).swapaxes(1, 2)
+        x_ln = self.ln(x)
+        attention_value, _ = self.mha(x_ln, x_ln, x_ln)
+        attention_value = attention_value + x
+        attention_value = self.ff_self(attention_value) + attention_value
+        return attention_value.swapaxes(2, 1).view(B, C, H, W)
 
 
 # ======================================================================
@@ -73,11 +102,12 @@ class ZeroConv(nn.Module):
 
 
 # ======================================================================
-#  CONTROLNET – 3 kanały (lung_left, lung_right, nodule)
+#  CONTROLNET
 # ======================================================================
 
 class ControlNet(nn.Module):
-    def __init__(self, in_channels=3, base_channels=64):
+    # ZMIANA: Domyślnie 128 kanałów
+    def __init__(self, in_channels=3, base_channels=128):
         super().__init__()
 
         ch1 = base_channels
@@ -141,7 +171,8 @@ class ControlNet(nn.Module):
 # ======================================================================
 
 class LIDCControlNetUNet(nn.Module):
-    def __init__(self, base_channels=64, emb_dim=256, cond_dim=5):
+    # ZMIANA: Domyślnie 128 kanałów
+    def __init__(self, base_channels=128, emb_dim=256, cond_dim=6):
         super().__init__()
 
         self.emb_dim = emb_dim
@@ -167,7 +198,11 @@ class LIDCControlNetUNet(nn.Module):
         self.down1 = ResBlock(1, ch1, emb_dim)
         self.down2 = ResBlock(ch1, ch2, emb_dim)
         self.down3 = ResBlock(ch2, ch3, emb_dim)
-        self.mid = ResBlock(ch3, ch3, emb_dim)
+        
+        # ZMIANA: Attention w bloku środkowym (Bottleneck)
+        self.mid_block1 = ResBlock(ch3, ch3, emb_dim)
+        self.mid_attn = SelfAttention(ch3)
+        self.mid_block2 = ResBlock(ch3, ch3, emb_dim)
 
         self.pool = nn.AvgPool2d(2)
 
@@ -197,7 +232,7 @@ class LIDCControlNetUNet(nn.Module):
         emb = t_emb + c_emb
 
         # ControlNet
-        cond_img = torch.cat([lung_mask, nodule_mask], dim=1)  # lung:2 , nodule:1 → 3 kanały
+        cond_img = torch.cat([lung_mask, nodule_mask], dim=1)
         c1, c2, c3 = self.controlnet(cond_img)
 
         # down
@@ -210,7 +245,10 @@ class LIDCControlNetUNet(nn.Module):
         d3 = self.down3(x2, emb) + c3
         x3 = self.pool(d3)
 
-        mid = self.mid(x3, emb)
+        # mid with ATTENTION
+        mid = self.mid_block1(x3, emb)
+        mid = self.mid_attn(mid)
+        mid = self.mid_block2(mid, emb)
 
         # up
         u3 = self.up_conv3(mid)
