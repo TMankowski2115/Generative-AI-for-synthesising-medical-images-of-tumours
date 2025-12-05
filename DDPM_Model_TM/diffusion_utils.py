@@ -1,5 +1,6 @@
 # diffusion_utils.py
 
+
 import torch
 
 def make_beta_schedule(T, beta_start=1e-4, beta_end=0.02):
@@ -17,6 +18,8 @@ class DiffusionSchedule:
         self.alphas_cumprod = alphas_cumprod
         self.sqrt_alphas_cumprod = torch.sqrt(alphas_cumprod)
         self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1.0 - alphas_cumprod)
+    
+        self.sqrt_betas = torch.sqrt(betas) #
 
     def q_sample(self, x0, t, noise=None):
         """
