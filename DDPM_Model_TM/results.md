@@ -30,8 +30,8 @@ The final model that produced the best stable results utilized a crucial two-sta
 
 #### Training Progress Summary
 
-![Training Metrics Analysis](sciezka/do/twojego/pliku/training_metrics_combined_1_112.png)
-*(Insert the combined plot showing FID, SSIM, PSNR over 112 Epochs here)*
+![Training Metrics Analysis](media/graphs.png)
+
 
 ---
 
@@ -43,7 +43,7 @@ The model demonstrates precise control over nodule placement, size, and adherenc
 
 | 0mm (Attached to Wall) | 3mm (Near Wall) | Healthy Lung (Zero Vector) |
 | :---: | :---: | :---: |
-| ![Gen 0mm](sciezka/do/gen_17920_left_d0.png) | ![Gen 3mm](sciezka/do/smart_gen_940_left_d3.png) | ![Generated Healthy Lung](sciezka/do/smart_gen_1871_4.png) |
+| ![Gen 0mm](media/0mm.png) | ![Gen 5mm](media/5mm.png) | ![Generated Healthy Lung](media/healthy.png) |
 | *Nodule correctly adheres to the pleura, demonstrating accurate control of the 0mm distance parameter*. | *Nodule is accurately separated from the pleura, demonstrating clear control over the intermediate distance*. | *Zero-vector input yields a healthy lung with correct texture and no mass*. |
 
 ---
