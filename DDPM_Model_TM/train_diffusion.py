@@ -5,6 +5,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import csv
+import math
+import heapq 
 
 from lidc_diffusion_dataset import LIDCDiffusionDataset
 from lidc_controlnet_model import LIDCControlNetUNet
@@ -16,7 +19,81 @@ from torchmetrics.image.inception import InceptionScore
 from torchmetrics.functional.image import peak_signal_noise_ratio
 from torchmetrics.functional.image import structural_similarity_index_measure
 from torchvision.utils import make_grid, save_image
-from torch.utils.tensorboard import SummaryWriter
+
+
+# =====================================================================
+# CHECKPOINT MANAGER (TOP 3)
+# =====================================================================
+class CheckpointManager:
+    """Zapisuje tylko N najlepszych modeli na podstawie metryki (np. FID)."""
+    def __init__(self, save_dir, max_to_keep=3, mode='min'):
+        self.save_dir = save_dir
+        self.max_to_keep = max_to_keep
+        self.mode = mode
+        # Lista krotek: (score, epoch, path)
+        self.top_k = [] 
+
+    def save(self, model_state, optimizer_state, ema_state, epoch, score):
+        ckpt_path = os.path.join(self.save_dir, f"model_epoch_{epoch:03d}_fid{score:.2f}.pt")
+        
+        # Zapisz na dysku
+        torch.save({
+            "epoch": epoch,
+            "model_state": model_state,
+            "optimizer_state": optimizer_state,
+            "ema_state": ema_state,
+            "score": score
+        }, ckpt_path)
+        
+        # Zarządzanie listą
+        # Używamy heap, ale prościej posortować listę
+        entry = (score, epoch, ckpt_path)
+        self.top_k.append(entry)
+        
+        # Sortowanie: rosnąco dla 'min' (FID), malejąco dla 'max' (SSIM)
+        reverse = True if self.mode == 'max' else False
+        self.top_k.sort(key=lambda x: x[0], reverse=reverse)
+        
+        # Jeśli mamy za dużo, usuwamy najgorszy
+        if len(self.top_k) > self.max_to_keep:
+            # Najgorszy jest na końcu listy (dla FID min: największy wynik)
+            worst = self.top_k.pop() 
+            worst_path = worst[2]
+            if os.path.exists(worst_path):
+                os.remove(worst_path)
+                print(f"[Checkpoints] Usunięto słabszy model: {worst_path}")
+
+        print(f"[Checkpoints] Zapisano. Aktualne Top {self.max_to_keep}: {[f'Ep{x[1]}:{x[0]:.2f}' for x in self.top_k]}")
+
+
+# =====================================================================
+# EMA CLASS
+# =====================================================================
+class EMA:
+    def __init__(self, model, beta=0.9999):
+        self.beta = beta
+        self.step = 0
+        self.ema_state = {
+            k: v.clone().detach().to(v.device)
+            for k, v in model.state_dict().items()
+        }
+
+    def update(self, model):
+        self.step += 1
+        with torch.no_grad():
+            model_state = model.state_dict()
+            for k, v in self.ema_state.items():
+                if k in model_state:
+                    current_val = model_state[k].to(v.device)
+                    v.mul_(self.beta).add_(current_val, alpha=1 - self.beta)
+
+    def copy_to(self, model):
+        current_state = model.state_dict()
+        new_state = {
+            k: v if k in self.ema_state else current_state[k]
+            for k, v in self.ema_state.items()
+        }
+        model.load_state_dict(new_state)
 
 
 # =====================================================================
@@ -46,7 +123,7 @@ def ddpm_sample(model, schedule, lung_mask, nodule_mask, cond_vec,
                 device, num_steps=None, cfg_scale=3.0):
 
     model.eval()
-    B, _, H, W = lung_mask.shape  # lung_mask: [B,2,H,W]
+    B, _, H, W = lung_mask.shape
 
     if num_steps is None:
         timesteps = torch.arange(schedule.T - 1, -1, -1, device=device)
@@ -90,38 +167,36 @@ def ddpm_sample(model, schedule, lung_mask, nodule_mask, cond_vec,
 
 
 # =====================================================================
-# QUICK EVAL
+# QUICK EVAL 
 # =====================================================================
 
 @torch.no_grad()
-def quick_epoch_eval(model, schedule, eval_loader, device, writer, epoch):
-
+def quick_epoch_eval(model, schedule, eval_loader, device, epoch):
     model.eval()
     fid = FrechetInceptionDistance(normalize=True).to(device)
     inception = InceptionScore(normalize=True).to(device)
 
     psnr_vals, ssim_vals = [], []
-    max_batches = 20
+    max_batches = 50 
 
     for i, batch in enumerate(eval_loader):
         if i >= max_batches:
             break
 
-        ct = batch["ct"].to(device)             # [B,1,H,W]
+        ct = batch["ct"].to(device)
+        lung_raw = batch["lung_mask"].to(device)
 
-        # lung_mask: [B,1,H,W] z wartościami 0/1/2
-        lung_raw = batch["lung_mask"].to(device)   # [B,1,H,W]
+        lung_left = (lung_raw == 1).float()
+        lung_right = (lung_raw == 2).float()
+        lung_two_ch = torch.cat([lung_left, lung_right], dim=1)
+        lung_union = (lung_left + lung_right).clamp(0, 1)
+        
+        # [POPRAWKA ZIOMKA - EVAL]
+        # Tło na -1.0, Płuca oryginalne
+        ct_masked = ct * lung_union + (1.0 - lung_union) * (-1.0)
 
-        lung_left = (lung_raw == 1).float()        # [B,1,H,W]
-        lung_right = (lung_raw == 2).float()       # [B,1,H,W]
-        lung_two_ch = torch.cat([lung_left, lung_right], dim=1)  # [B,2,H,W]
-
-        # CT tylko w płucach
-        lung_union = (lung_left + lung_right).clamp(0, 1)        # [B,1,H,W]
-        ct_masked = ct * lung_union                              # [B,1,H,W]
-
-        nodule = batch["nodule_mask"].to(device)   # [B,1,H,W]
-        cond_vec = batch["cond_vector"].to(device) # [B,5]
+        nodule = batch["nodule_mask"].to(device)
+        cond_vec = batch["cond_vector"].to(device)
 
         B = ct.size(0)
         t = torch.randint(0, schedule.T, (B,), device=device)
@@ -131,7 +206,10 @@ def quick_epoch_eval(model, schedule, eval_loader, device, writer, epoch):
 
         alpha_bar_t = schedule.alphas_cumprod[t].view(-1, 1, 1, 1)
         x0_pred = (x_t - torch.sqrt(1 - alpha_bar_t) * noise_pred) / torch.sqrt(alpha_bar_t)
+        
+        x0_pred = torch.clamp(x0_pred, -1.5, 1.5)
 
+        # Do metryk też używamy poprawionego maskowania tła
         psnr_vals.append(peak_signal_noise_ratio(x0_pred, ct_masked, data_range=2.0))
         ssim_vals.append(structural_similarity_index_measure(x0_pred, ct_masked, data_range=2.0))
 
@@ -153,11 +231,13 @@ def quick_epoch_eval(model, schedule, eval_loader, device, writer, epoch):
         f"PSNR={psnr_mean:.2f} | SSIM={ssim_mean:.3f}"
     )
 
-    writer.add_scalar("eval_quick/FID", fid_score, epoch)
-    writer.add_scalar("eval_quick/IS_mean", is_mean, epoch)
-    writer.add_scalar("eval_quick/IS_std", is_std, epoch)
-    writer.add_scalar("eval_quick/PSNR", psnr_mean, epoch)
-    writer.add_scalar("eval_quick/SSIM", ssim_mean, epoch)
+    return {
+        "FID": fid_score,
+        "IS_mean": is_mean.item(),
+        "IS_std": is_std.item(),
+        "PSNR": psnr_mean,
+        "SSIM": ssim_mean
+    }
 
 
 # =====================================================================
@@ -166,29 +246,47 @@ def quick_epoch_eval(model, schedule, eval_loader, device, writer, epoch):
 
 def train():
 
-    SLICES_ROOT = "dataset_lidc_2d_seg/slices"
-    TRAIN_SPLIT = "dataset_lidc_2d_seg/splits/train.txt"
+    # --- KONFIGURACJA ---
+    SLICES_ROOT = r"/home/s189030/raid/PB/dataset_lidc_2d_seg/slices"
+    TRAIN_SPLIT = r"/home/s189030/raid/PB/dataset_lidc_2d_seg/splits/train.txt"
 
     IMAGE_SIZE = 256
-    BATCH_SIZE = 8
-    EPOCHS = 10
-    LR = 1e-4
+    BATCH_SIZE = 32 # Przy base_channels=128 i Attention to może być dużo. Jak wywali OOM, zmniejsz do 16.
+    EVAL_BATCH_SIZE = 16
+    EPOCHS = 150
+    # Restartujemy trening, więc LR wyższy na start
+    LR = 5e-5 
     T_STEPS = 1000
-    POS_FACTOR = 5
+    POS_FACTOR = 2  
     CFG_DROP = 0.4
-
-    SAVE_DIR = "lidc_diffusion_ckpts_lungs_only"
-    SAMPLE_DIR = "lidc_sample_output_lungs_only"
-
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # --- NOWA LOKALIZACJA DLA DUŻYCH MODELI ---
+    SAVE_DIR = "lidc_diffusion_ckpts_large" 
+    SAMPLE_DIR = "lidc_samples_large"
+    
+    DEVICE_INDEX = 3
+    if torch.cuda.is_available():
+        if torch.cuda.device_count() > DEVICE_INDEX:
+            DEVICE = torch.device(f"cuda:{DEVICE_INDEX}")
+        else:
+            print(f"[WARN] Karta cuda:{DEVICE_INDEX} niedostępna. Używam cuda:0.")
+            DEVICE = torch.device("cuda:0")
+    else:
+        DEVICE = torch.device("cpu")
+    
     print("Using:", DEVICE)
 
     os.makedirs(SAVE_DIR, exist_ok=True)
     os.makedirs(SAMPLE_DIR, exist_ok=True)
 
     run_dir = next_run_dir(os.path.join(SAVE_DIR, "runs"))
-    writer = SummaryWriter(run_dir)
-    print(f"[TensorBoard] logging into: {run_dir}")
+    print(f"[Info] Run directory: {run_dir}")
+
+    csv_path = os.path.join(run_dir, "metrics.csv")
+    with open(csv_path, mode='w', newline='') as f:
+        csv_writer = csv.writer(f)
+        csv_writer.writerow(["Epoch", "Avg_Train_Loss", "FID", "IS_mean", "IS_std", "PSNR", "SSIM"])
+    print(f"[Info] Logging metrics to: {csv_path}")
 
     # Dataset
     dataset = LIDCDiffusionDataset(SLICES_ROOT, TRAIN_SPLIT, IMAGE_SIZE)
@@ -198,68 +296,66 @@ def train():
         dataset, BATCH_SIZE, sampler=sampler, num_workers=4, pin_memory=True
     )
     eval_loader = DataLoader(
-        dataset, 4, shuffle=True, num_workers=2, pin_memory=True
+        dataset, EVAL_BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True
     )
 
-    # Model
+    # --- NOWY MODEL ---
+    print("[INIT] Tworzenie modelu Large (ch=128 + Attention)...")
     model = LIDCControlNetUNet(
-        base_channels=64,
+        base_channels=128, # ZWIĘKSZONO
         emb_dim=256,
-        cond_dim=5
+        cond_dim=6
     ).to(DEVICE)
 
+    # Manager zapisu Top 3 (według FID, czyli 'min')
+    ckpt_manager = CheckpointManager(SAVE_DIR, max_to_keep=3, mode='min')
+
+    ema = EMA(model, beta=0.9999)
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR)
     mse = nn.MSELoss()
     schedule = DiffusionSchedule(T=T_STEPS, device=DEVICE)
 
-    global_step = 0
-
+    # Start od zera (bo nowa architektura)
+    current_epoch = 1
+    
     # =========================================================
     # TRAIN LOOP
     # =========================================================
-    for epoch in range(1, EPOCHS + 1):
+    for epoch in range(current_epoch, EPOCHS + 1):
 
         model.train()
         pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{EPOCHS}")
         epoch_loss = 0.0
 
         for batch in pbar:
+            ct = batch["ct"].to(DEVICE)
+            lung_raw = batch["lung_mask"].to(DEVICE)
+            lung_left = (lung_raw == 1).float()
+            lung_right = (lung_raw == 2).float()
+            lung_two_ch = torch.cat([lung_left, lung_right], dim=1)
+            lung_union = (lung_left + lung_right).clamp(0, 1)
+            
+            # [POPRAWKA ZIOMKA]
+            # Maska w treningu: tło to -1.0
+            ct_in = ct * lung_union + (1.0 - lung_union) * (-1.0)
 
-            ct = batch["ct"].to(DEVICE)  # [B,1,H,W]
-
-            # === MASKI PŁUC ===
-            lung_raw = batch["lung_mask"].to(DEVICE)   # [B,1,H,W]
-
-            lung_left = (lung_raw == 1).float()        # [B,1,H,W]
-            lung_right = (lung_raw == 2).float()       # [B,1,H,W]
-            lung_two_ch = torch.cat([lung_left, lung_right], dim=1)  # [B,2,H,W]
-
-            # CT tylko w płucach
-            lung_union = (lung_left + lung_right).clamp(0, 1)  # [B,1,H,W]
-            ct_in = ct * lung_union                            # [B,1,H,W]
-
-            # nodule mask (jeśli jest)
-            nodule = batch["nodule_mask"].to(DEVICE)   # [B,1,H,W]
-
-            cond_vec = batch["cond_vector"].to(DEVICE) # [B,5]
+            nodule = batch["nodule_mask"].to(DEVICE)
+            cond_vec = batch["cond_vector"].to(DEVICE) 
 
             B = ct.size(0)
             t = torch.randint(0, schedule.T, (B,), device=DEVICE)
 
             x_t, noise = schedule.q_sample(ct_in, t)
 
-            # classifier-free dropout  (JEDNA MASKA [B,1,1,1])
             drop = (torch.rand(B, 1, 1, 1, device=DEVICE) < CFG_DROP).float()
-            drop_vec = drop[:, 0, 0, 0].unsqueeze(1)  # [B,1]
+            drop_vec = drop[:, 0, 0, 0].unsqueeze(1)
 
-            lung_in = lung_two_ch * (1 - drop)        # [B,2,H,W]
-            nodule_in = nodule * (1 - drop)           # [B,1,H,W]
-            cond_in = cond_vec * (1 - drop_vec)       # [B,5]
+            lung_in = lung_two_ch * (1 - drop)
+            nodule_in = nodule * (1 - drop)
+            cond_in = cond_vec * (1 - drop_vec)
 
-            # MODEL FORWARD
             noise_pred = model(x_t, t, lung_in, nodule_in, cond_in)
 
-            # SSIM loss
             alpha_bar = schedule.alphas_cumprod[t].view(-1, 1, 1, 1)
             x0_pred = (x_t - torch.sqrt(1 - alpha_bar) * noise_pred) / torch.sqrt(alpha_bar)
             ssim_loss = 1 - structural_similarity_index_measure(
@@ -271,58 +367,65 @@ def train():
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-
-            writer.add_scalar("train/loss", loss.item(), global_step)
+            
+            ema.update(model)
             epoch_loss += loss.item()
-            global_step += 1
-
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
 
         avg_loss = epoch_loss / len(train_loader)
         print(f"[Epoch {epoch}] avg_loss={avg_loss:.5f}")
-        writer.add_scalar("train/avg_epoch_loss", avg_loss, epoch)
-
+        
         # EVAL
-        quick_epoch_eval(model, schedule, eval_loader, DEVICE, writer, epoch)
+        original_weights = {k: v.clone() for k, v in model.state_dict().items()}
+        ema.copy_to(model)
+        
+        metrics = quick_epoch_eval(model, schedule, eval_loader, DEVICE, epoch)
+        
+        with open(csv_path, mode='a', newline='') as f:
+            csv_writer = csv.writer(f)
+            csv_writer.writerow([
+                epoch, 
+                f"{avg_loss:.5f}", 
+                f"{metrics['FID']:.4f}", 
+                f"{metrics['IS_mean']:.4f}", 
+                f"{metrics['IS_std']:.4f}", 
+                f"{metrics['PSNR']:.4f}", 
+                f"{metrics['SSIM']:.4f}"
+            ])
 
         # SAMPLE GRID
         with torch.no_grad():
             sample = [dataset[i] for i in range(8)]
-
-            ct = torch.stack([s["ct"] for s in sample]).to(DEVICE)          # [B,1,H,W]
-            lung_raw = torch.stack([s["lung_mask"] for s in sample]).to(DEVICE)  # [B,1,H,W]
-
+            ct = torch.stack([s["ct"] for s in sample]).to(DEVICE)
+            lung_raw = torch.stack([s["lung_mask"] for s in sample]).to(DEVICE)
             lung_left = (lung_raw == 1).float()
             lung_right = (lung_raw == 2).float()
             lung_two_ch = torch.cat([lung_left, lung_right], dim=1)
-
             lung_union = (lung_left + lung_right).clamp(0, 1)
-            ct_in = ct * lung_union
+            
+            # Maskowanie w samplingu też musi być poprawione!
+            ct_in = ct * lung_union + (1.0 - lung_union) * (-1.0)
 
-            nod = torch.stack([s["nodule_mask"] for s in sample]).to(DEVICE)  # [B,1,H,W]
-            cond = torch.stack([s["cond_vector"] for s in sample]).to(DEVICE) # [B,5]
+            nod = torch.stack([s["nodule_mask"] for s in sample]).to(DEVICE)
+            cond = torch.stack([s["cond_vector"] for s in sample]).to(DEVICE)
 
             gen = ddpm_sample(model, schedule, lung_two_ch, nod, cond, DEVICE)
-
             ct_rgb = ct_to_rgb01(ct_in)
             gen_rgb = ct_to_rgb01(gen)
-
             grid = make_grid(torch.cat([ct_rgb, gen_rgb], dim=0), nrow=8)
             save_image(grid, f"{SAMPLE_DIR}/epoch_{epoch:03d}.png")
-            writer.add_image("samples/epoch", grid, epoch)
 
-        ckpt_path = os.path.join(SAVE_DIR, f"model_epoch_{epoch:03d}.pt")
-        torch.save(
-            {
-                "epoch": epoch,
-                "model_state": model.state_dict(),
-                "optimizer_state": optimizer.state_dict(),
-            },
-            ckpt_path,
+        
+        ckpt_manager.save(
+            model.state_dict(), # EMA weights
+            optimizer.state_dict(),
+            ema.ema_state,
+            epoch,
+            metrics['FID'] # Score to FID (im mniej tym lepiej)
         )
-        print(f"[Checkpoint saved → {ckpt_path}]")
+        
+        model.load_state_dict(original_weights)
 
-    writer.close()
     print("Training finished.")
 
 
