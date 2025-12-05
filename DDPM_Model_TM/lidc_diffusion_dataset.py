@@ -24,12 +24,14 @@ def normalize_ct_unit_to_minus1_1(x):
 # =============================== MASK LOADER ===================================
 
 def load_mask_nearest(path):
-    """Load mask PNG as uint8 {0,1} and return float32."""
+    """Load mask PNG preserving values {0, 1, 2} and return float32."""
     import cv2
     arr = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     if arr is None:
         raise FileNotFoundError(path)
-    return (arr > 0).astype(np.float32)  # 0/1
+    
+    # ZMIANA: Zwracamy surowe wartości (0, 1, 2), a nie bool (arr > 0)
+    return arr.astype(np.float32)
 
 
 # =============================== DATASET =======================================
@@ -129,9 +131,6 @@ class LIDCDiffusionDataset(Dataset):
         nod = F.interpolate(nod[None], (self.image_size, self.image_size),
                             mode="nearest")[0]
 
-        # ------------------------------------------
-        # 3) LABELS + COND VECTOR
-        # ------------------------------------------
         labels_path = os.path.join(root, "labels.json")
         with open(labels_path, "r") as f:
             labels = json.load(f)
@@ -145,6 +144,16 @@ class LIDCDiffusionDataset(Dataset):
             cy = (ymin + ymax) / 2.0 / H
             radius = labels["diameter_mm"] / 30.0
 
+            # --- NOWOŚĆ: Odległość od opłucnej ---
+            # Pobieramy wartość, domyślnie 0.0
+            dist_mm = labels.get("distance_to_pleura_mm")
+            if dist_mm is None:
+                dist_mm = 0.0
+            
+            # Normalizacja: zakładamy, że >30mm to już "daleko". 
+            # Zakres [0, 1].
+            dist_norm = np.clip(dist_mm, 0.0, 30.0) / 30.0
+
             side = labels["side"]
             if side == "left":
                 side_vec = [1.0, 0.0]
@@ -153,10 +162,12 @@ class LIDCDiffusionDataset(Dataset):
             else:
                 side_vec = [0.0, 0.0]
         else:
-            cx = cy = radius = 0.0
+            # Dla negatywów (tło) wszystko zerujemy
+            cx = cy = radius = dist_norm = 0.0
             side_vec = [0.0, 0.0]
 
-        cond_vector = torch.tensor([cx, cy, radius] + side_vec, dtype=torch.float32)
+        # ZMIANA: Wektor ma teraz 6 elementów: [cx, cy, r, side_L, side_R, dist]
+        cond_vector = torch.tensor([cx, cy, radius] + side_vec + [dist_norm], dtype=torch.float32)
 
         # ------------------------------------------
         # 4) LOAD PROMPT
