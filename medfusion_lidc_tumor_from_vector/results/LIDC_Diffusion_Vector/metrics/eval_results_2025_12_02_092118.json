@@ -1,0 +1,12 @@
+{
+    "timestamp": "2025_12_02_092118",
+    "n_real": 2000,
+    "n_fake": 200,
+    "fid": 27.443763732910156,
+    "precision": 0.0949999988079071,
+    "recall": 0.43150001764297485,
+    "psnr": 22.627979278564453,
+    "ssim": 0.729191243648529
+}
+
+// raid/PB/medfusion-main2/runs/2025_12_01_163938_lidc_vector_diffusion/epoch=59-step=53640.ckpt
