@@ -21,7 +21,7 @@ The Autoencoder plays a crucial role in preserving anatomical details.
 | **MS-SSIM** | **0.9888** ± 0.004 |
 | **MSE** | **3.01e-4** ± 1.67e-4 |
 
-## 🏗️ Architecture
+## Architecture
 
 This project adapts the **MedFusion** framework to handle continuous vector.
 
