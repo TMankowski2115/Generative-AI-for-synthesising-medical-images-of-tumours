@@ -7,6 +7,7 @@ This model allows control over nodule **location, size, malignancy, and texture*
 <img width="256" height="256" alt="NOD1_x0.38_y0.69_sz0.05_mal0.75_tex0.75" src="https://github.com/user-attachments/assets/fc81ab40-27ea-430f-97ae-782c6da1fa5d" />
 NOD1_x0.38_y0.69_sz0.05_mal0.75_tex0.75
 
+
 <img width="256" height="256" alt="obraz" src="https://github.com/user-attachments/assets/5502dab1-7b02-495a-8950-8971baf1682b" />
 NOD1_x0.81_y0.65_sz0.06_mal0.75_tex0.50
 
