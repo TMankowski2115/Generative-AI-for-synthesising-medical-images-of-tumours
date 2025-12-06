@@ -23,7 +23,7 @@ The Autoencoder plays a crucial role in preserving anatomical details.
 
 ## Architecture
 
-This project adapts the **MedFusion** framework to handle continuous vector.
+This project adapts the [**MedFusion**](https://github.com/mueller-franzes/medfusion) framework to handle continuous vector.
 
 ### 1. Latent Space (VAE)
 * **Backbone:** AutoencoderKL (trained on LIDC-IDRI slices).
