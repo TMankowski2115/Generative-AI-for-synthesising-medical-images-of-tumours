@@ -1,0 +1,55 @@
+classifier_free_guidance_dropout: 0.3
+clip_x0: false
+do_input_centering: false
+ema_kwargs: {}
+estimate_variance: false
+estimator_objective: x_T
+latent_embedder: !!python/name:medical_diffusion.models.embedders.latent_embedders.VAE ''
+latent_embedder_checkpoint: /raid/s189030/PB/medfusion-main2/runs/2025_11_29_113618_lidc_vae_conditional_ready/loss=37652.2578.ckpt
+loss: !!python/name:torch.nn.modules.loss.L1Loss ''
+loss_kwargs: {}
+lr_scheduler: null
+lr_scheduler_kwargs: {}
+noise_estimator: !!python/name:medical_diffusion.models.estimators.unet2.UNet ''
+noise_estimator_kwargs:
+  cond_embedder: !!python/name:__main__.ScalarEmbedder ''
+  cond_embedder_kwargs:
+    emb_dim: 1024
+    num_scalars: 6
+  deep_supervision: false
+  hid_chs:
+  - 256
+  - 256
+  - 512
+  - 1024
+  in_ch: 8
+  kernel_sizes:
+  - 3
+  - 3
+  - 3
+  - 3
+  out_ch: 8
+  spatial_dims: 2
+  strides:
+  - 1
+  - 2
+  - 2
+  - 2
+  time_embedder: !!python/name:medical_diffusion.models.embedders.time_embedder.TimeEmbbeding ''
+  time_embedder_kwargs:
+    emb_dim: 1024
+  use_attention: linear
+  use_res_block: true
+noise_scheduler: !!python/name:medical_diffusion.models.noise_schedulers.gaussian_scheduler.GaussianNoiseScheduler ''
+noise_scheduler_kwargs:
+  beta_end: 0.02
+  beta_start: 0.002
+  schedule_strategy: scaled_linear
+  timesteps: 1000
+num_samples: 4
+optimizer: !!python/name:torch.optim.adamw.AdamW ''
+optimizer_kwargs:
+  lr: 0.0001
+sample_every_n_steps: 10000000
+use_ema: false
+use_self_conditioning: false
