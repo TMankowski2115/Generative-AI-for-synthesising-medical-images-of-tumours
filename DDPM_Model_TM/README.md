@@ -2,8 +2,8 @@
 
 ## Overview
 
-This repository contains a complete pipeline for **diffusion-based generation of lung CT slices**, with explicit control over lung masks, nodule masks, and a **5-dimensional conditioning vector** describing synthetic nodule properties.  
-The project uses a **ControlNet-enhanced UNet** inside a **DDPM** framework and is built around preprocessed slices from the **LIDC-IDRI dataset**.
+This repository contains a complete pipeline for **diffusion-based generation of lung CT slices**, with explicit control over lung masks, nodule masks, and a **6-dimensional conditioning vector** describing synthetic nodule properties (including distance to pleura).  
+The project uses a **ControlNet-enhanced UNet with Self-Attention** inside a **DDPM** framework and is built around preprocessed slices from the **LIDC-IDRI dataset**.
 
 The system supports:
 
@@ -20,25 +20,24 @@ The system supports:
 
 The pipeline follows the classical **DDPM (Denoising Diffusion Probabilistic Models)** approach:
 
-1. **Forward diffusion:**  
-   Noise is added to clean CT slices inside lung regions.
+1. **Forward diffusion:** Noise is added to clean CT slices inside lung regions.
 
-2. **Reverse diffusion:**  
-   The UNet predicts noise at each timestep.
+2. **Reverse diffusion:** The UNet predicts noise at each timestep to reconstruct the image.
 
 3. **Conditioning sources:**
    - 2-channel lung masks (left / right)  
    - 1-channel nodule mask  
-   - 5-dimensional vector:  
+   - **6-dimensional vector** for precise control:  
      ```
-     (cx, cy, scaled_diameter, left_flag, right_flag)
+     (cx, cy, radius, side_left, side_right, dist_pleura)
      ```
+     *Note: `dist_pleura` allows controlling how close the nodule is to the chest wall.*
 
 4. A **ControlNet module** injects anatomical information into the UNet’s skip connections.
 
-5. **Classifier-free guidance (CFG)** enhances controllability during sampling.
+5. **Self-Attention Mechanism:** Integrated into the UNet to improve the generation of fine-grained textures (lung parenchyma vs. nodule tissue).
 
-The user can specify the lung side and nodule diameter or generate fully synthetic nodules placed inside anatomically plausible regions.
+6. **Classifier-free guidance (CFG):** Enhances controllability during sampling by mixing conditional and unconditional estimates.
 
 ---
 
@@ -46,25 +45,22 @@ The user can specify the lung side and nodule diameter or generate fully synthet
 
 ### **DiffusionSchedule - `diffusion_utils.py`**
 - Builds linear beta schedules  
-- Computes alphas, cumulative products, sqrt terms  
+- Computes alphas, cumulative products, and `sqrt_betas`  
 - `q_sample(x0, t)` - applies forward diffusion (adds noise to CT slices)
 
 ### **LIDCDiffusionDataset — `lidc_diffusion_dataset.py`**
 Loads LIDC-derived slices and returns:
-- CT image in `[-1, 1]`
+- CT image in `[-1, 1]` (HU normalized)
 - Lung mask  
 - Nodule mask  
-- Conditioning vector `[5]`  
-- Optional text prompt  
+- **Conditioning vector `[6]`** (includes normalized distance to pleura)  
+- Optional text prompt (for compatibility)  
 - Slice metadata  
-- “Has nodule” flag  
-
-Handles HU normalization and correct interpolation.
 
 ### **LIDCControlNetUNet — `lidc_controlnet_model.py`**
 UNet enhanced with:
-- Timestep embeddings  
-- Conditional embeddings  
+- **Self-Attention Layers:** Newly added to capture global dependencies and improve texture realism.
+- Timestep & Conditional embeddings  
 - 3-channel ControlNet for `(left_lung, right_lung, nodule_mask)`  
 - ResBlocks with skip connections  
 - A final noise prediction head  
@@ -76,47 +72,41 @@ Key functions:
 - `draw_bbox_on_tensor(...)` - draws a visual bounding box for debugging  
 
 ### **Oversampling — `sampler_utils.py`**
-- `make_oversampling_sampler(...)`: increases sampling frequency for positive (tumor) slices.
+- `make_oversampling_sampler(...)`: Increases sampling frequency for positive (tumor) slices (default factor=5) to handle dataset imbalance.
 
 ### **Training — `train_diffusion.py`**
 Implements:
-- Full DDPM training loop  
-- Classifier-free dropout  
+- Full DDPM training loop with **EMA (Exponential Moving Average)** for weight stabilization.
+- **Top-k Checkpointing:** Saves the top 3 models based on FID score.
 - Loss = `MSE(noise)` + `0.1 * SSIM loss`  
-- Quick evaluation: FID, IS, PSNR, SSIM  
+- Real-time evaluation: FID, Inception Score (IS), PSNR, SSIM  
 - Automatic sample grids per epoch  
-- TensorBoard logging  
-- Model checkpointing  
 
 ### **Debug Utilities**
 - `test_dataset.py` - visualize dataset samples and masks  
-- `test_model.py` -  verify model forward pass  
+- `test_model.py` -  verify model forward pass and tensor shapes  
 
 ---
 
 ## 3. Repository Structure
-├── diffusion_utils.py # Diffusion schedule & forward noising
+├── diffusion_utils.py          # Diffusion schedule, betas & forward noising
 
-├── generate_nodule_user.py # Main script for user-based nodule generation
+├── generate_nodule_user.py     # Main script for user-based nodule generation
 
-├── lidc_controlnet_model.py # ControlNet + UNet architecture
+├── lidc_controlnet_model.py    # ControlNet + UNet architecture with Self-Attention
 
-├── lidc_diffusion_dataset.py # Custom LIDC dataset loader
+├── lidc_diffusion_dataset.py   # Custom LIDC dataset loader (6-dim conditioning)
 
-├── sampler_utils.py # Oversampling utilities
+├── sampler_utils.py            # Oversampling utilities (WeightedRandomSampler)
 
-├── test_dataset.py # Dataset visualization/debugging
+├── test_dataset.py             # Dataset visualization/debugging
 
-├── test_model.py # Model forward-pass testing
+├── test_model.py               # Model forward-pass testing
 
-└── train_diffusion.py # Full training pipeline
-
+└── train_diffusion.py          # Full training pipeline with EMA & Metrics
 
 ---
 
 ##  4. Disclaimer
 
-Portions of the code were formatted, reorganized, or stylistically refined using **Generative AI tools**.  
-
-
-
+Portions of the code were formatted, reorganized, or stylistically refined using **Generative AI tools**.
