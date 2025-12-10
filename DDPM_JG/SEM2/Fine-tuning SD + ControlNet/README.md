@@ -10,7 +10,7 @@ are controlled by a textual prompt and an explicit spatial conditioning signal.
 ## 1. Data and conditioning signals
 
 **Dataset**
-- Source: LIDC (preprocessed to 2D axial CT slices).
+- Source: LIDC (preprocessed to 2D axial CT slices): [Dataset] https://www.kaggle.com/datasets/jokerak/lidcidri
 - Resolution used in training: **512 × 512** RGB (CT slices normalized and mapped to [-1, 1]).
 - CSV file `captions_lidc_lora.csv` contains:
   - `file_name`: image file in `LIDC/image/` (e.g. `LIDC_2338.png`),
