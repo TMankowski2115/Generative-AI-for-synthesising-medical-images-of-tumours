@@ -63,7 +63,6 @@ ControlNet receives as additional input:
 - the same noisy latent,
 - the same timestep and text embedding,
 - a **tumor mask** image as conditioning.
-- 
 ---
 
 ## 3. Training setup
