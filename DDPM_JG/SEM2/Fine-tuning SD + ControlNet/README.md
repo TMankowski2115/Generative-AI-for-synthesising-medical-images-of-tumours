@@ -116,7 +116,7 @@ On a validation subset of ~200 slices:
 | Model                         | PSNR [dB] | SSIM   | FID    |
 |------------------------------|-----------|--------|--------|
 | SD 1.5 baseline              |   ~8.7    | ~0.17  | ~239   |
-| SD 1.5 fine-tuned (wide UNet)|  ~10.5    | ~0.31  |  ~96   |
+| SD 1.5 fine-tuned (wide UNet)|  ~10.4    | ~0.30  |  ~90   |
 | SD 1.5 FT + ControlNet (mask)|  ~10.8    | ~0.34  | ~120   |
 
 Interpretation:
@@ -127,7 +127,12 @@ Interpretation:
 
 Several visualization experiments are used to inspect behaviour of the model.
 
-### 5.1 GT vs Baseline FT vs ControlNet+FT
+### 5.1 Baseline FT
+Sample result from text_prompt: "axial lung CT, single solid pulmonary nodule in the right lower lobe, "
+    "high-resolution chest CT, realistic medical CT image"
+<img width="512" height="512" alt="pobrane (2)" src="https://github.com/user-attachments/assets/fe94e9e0-8666-4d89-b2a0-ef16b872ffca" />
+
+### 5.2 GT vs Baseline FT vs ControlNet+FT
 
 For selected validation cases:
 
@@ -143,7 +148,7 @@ Observation:
 <img width="1575" height="409" alt="pobrane (4)" src="https://github.com/user-attachments/assets/b260d9ec-1caa-4255-9c01-9bc16763a3c8" />
 
 
-### 5.2 Shuffled masks (foreign mask test)
+### 5.3 Shuffled masks (foreign mask test)
 
 Test whether ControlNet really uses the mask:
 
@@ -155,7 +160,7 @@ Test whether ControlNet really uses the mask:
 
 <img width="1976" height="410" alt="pobrane" src="https://github.com/user-attachments/assets/30802038-de1a-470b-9bf5-19fa260dd340" />
 
-### 5.3 Multiple seeds (same mask, different noise)
+### 5.4 Multiple seeds (same mask, different noise)
 
 - Fix prompt and tumor mask.
 - Generate multiple samples with different random seeds.
