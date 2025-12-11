@@ -153,7 +153,6 @@ Test whether ControlNet really uses the mask:
   - prompt from A, mask from B → generation 2.
     
 
-Suggested figure:
 <img width="1976" height="410" alt="pobrane" src="https://github.com/user-attachments/assets/30802038-de1a-470b-9bf5-19fa260dd340" />
 
 ### 5.3 Multiple seeds (same mask, different noise)
