@@ -128,8 +128,7 @@ Interpretation:
 Several visualization experiments are used to inspect behaviour of the model.
 
 ### 5.1 Baseline FT
-Sample result from text_prompt: "axial lung CT, single solid pulmonary nodule in the right lower lobe, "
-    "high-resolution chest CT, realistic medical CT image"
+Sample result from text_prompt: "axial lung CT, single solid pulmonary nodule in the right lower lobe, " "high-resolution chest CT, realistic medical CT image"
 <img width="512" height="512" alt="pobrane (2)" src="https://github.com/user-attachments/assets/fe94e9e0-8666-4d89-b2a0-ef16b872ffca" />
 
 ### 5.2 GT vs Baseline FT vs ControlNet+FT
